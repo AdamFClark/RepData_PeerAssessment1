@@ -5,21 +5,144 @@ output:
     keep_md: true
 ---
 
+Four Score and Seven years ago, my great great grandpappy told my great grandpappy to keep at it - as one day one of our proginy will create an R Markdown document for an online class - and with that, all the pain of living through dark times will be avenged.  That time has come.  That time is now.  And this - <i>this document before you</i> - is the culmination of generation upon generations of grandpappys hard work.  So sit back, grab some cocoa, and prepare to witness history.  Or just sit and drink cocoa at any rate.
+
 
 ## Loading and preprocessing the data
 
+```{r, InializeLibraries, echo=TRUE}
+library(dplyr)
+library(ggplot2)
+library(lubridate) #To use hm()
+library(stringr) #To use str_c()
+```
 
+As the great George S. Patton told his soldiers before the U.S. invasion of Atlantis; "Men!  The first thing you have to do is ingest data into R!"  Finding no better place to start, I too will ingest the 'activity.csv' into an R data frame, and I shall call it 'ActivityData'.
 
-## What is mean total number of steps taken per day?
+The dataset is of a single individual's steps taken per day for 61 days (the best he could, mistakes being human and all).  The variables included in this dataset are:
+<li>steps: Number of steps taking in a 5-minute interval (missing values, of which there are 2304, are coded as NA) </li>
+<li>date: The date on which the measurement was taken in YYYY-MM-DD format</li>
+<li>interval: Identifier for the 5-minute interval in which measurement was taken</li>
+<br>
 
+```{r, Ingesting, echo=TRUE}
 
+ActivityData <- read.csv("activity.csv")
+head(ActivityData,10)
+
+```
+
+## What is the mean total number of steps taken per day?
+
+I used the convenient summary functions of the DPLYR package to calculate the total number of steps taken per day.  Note, intervals that were "NA" are not included in the totals.
+
+```{r, Question1, echo=TRUE}
+
+#1. Calculate the total number of steps taken per day
+#3. Calculate and report the mean and median of the total number of steps taken per day.
+DailyTotals <- ActivityData %>%
+    group_by(date) %>%
+    summarize(dailyStepTotal = sum(steps,na.rm=TRUE),dailyStepMean = mean(steps,na.rm=TRUE), dailyStepMedian = median(steps, na.rm=TRUE), DataType = "Orig")
+DailyTotals
+
+#2. Make a histogram of the total number of steps taken each day.
+qplot(dailyStepTotal, data=DailyTotals, geom="histogram", ylab="Days (61 Days in Data)", xlab="Total Daily Steps")
+
+```
 
 ## What is the average daily activity pattern?
 
+```{r, Question2, echo=TRUE}
 
+#1. Make a time series plot of the 5-minute inervals and the average number of steps taken in each interval across all days?
+IntervalTrends <- ActivityData %>%
+    group_by(interval) %>%
+    summarize(intervalStepTotal = sum(steps,na.rm=TRUE),intervalStepMean = mean(steps,na.rm=TRUE), intervalStepMedian = median(steps, na.rm=TRUE))
+
+#The data in the 'interval' field isn't so useful for the time series plot.  When I tried to transform the data in the "Load and Transform" portion of the code, then the date fields would cause the dplyr summarize commands to fail.  So I would have to "select" them out.  It is annoying, yes, but I've found I need to do this transformation after the dplyr functions.
+
+IntervalTrends <- mutate(IntervalTrends, Hours = floor(interval/100), Minutes = interval - Hours*100, TimeOfDayString = (str_c(Hours,":",Minutes)), TimeOfDayDate = TimeOfDayString)
+
+IntervalTrends$TimeOfDayDate = strptime(IntervalTrends$TimeOfDayString, "%M:%S")
+
+head(IntervalTrends,10)
+
+plot(IntervalTrends$TimeOfDayDate, IntervalTrends$intervalStepMean, ylab = "Average Steps Per Interval", xlab = "Time of Day", type="l")
+
+#2. Which 5-minute interval, on average across all days in the dataset, contains the maximum number of steps?
+
+#The Maximum number of steps is
+max(IntervalTrends$intervalStepTotal)
+
+#  And it occurs during the interval of
+IntervalTrends[IntervalTrends$intervalStepTotal == max(IntervalTrends$intervalStepTotal),7]
+
+```
 
 ## Imputing missing values
 
+```{r, Question3, echo=TRUE}
 
+#1. Calculate and report the total number of missing values in the dataset.
+MissingData <- ActivityData[is.na(ActivityData$steps),]
+
+#  The Number of missing (NA) steps is
+nrow(MissingData)
+
+#2. Devise a strategy for filling in all of the missing values in the dataset.
+#3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
+#  Imputing missing data is dangerous.  Using the average number of steps for that interval seems like it should be the least dangerous.
+
+ImputtingData <- merge(x = ActivityData, y = IntervalTrends[,c(1,3)], by.x = "interval", by.y =  "interval")
+
+#  Make an empty field called "ImputtedSteps"
+ImputtingData <- mutate(ImputtingData, ImputtedSteps = 0)
+
+#  For those rows that have NA steps, grab the interval mean
+ImputtingData$ImputtedSteps[is.na(ImputtingData$steps)] <- ImputtingData$intervalStepMean[is.na(ImputtingData$steps)]
+
+#  For those rows that are not NA steps, grap the steps
+ImputtingData$ImputtedSteps[!is.na(ImputtingData$steps)] <- ImputtingData$steps[!is.na(ImputtingData$steps)]
+
+#  The field ImputtedSteps can now be used in place of steps
+head(ImputtingData,10)
+
+#4. Make a histogram of the total number of steps taken each day and calculate and report the mean and median total nmber of steps taken per day.  (Daily Mean and Median are above, plot is below)
+
+DailyImputtedTotals <- ImputtingData %>%
+    group_by(date) %>%
+    summarize(dailyStepTotal = sum(ImputtedSteps,na.rm=TRUE),dailyStepMean = mean(ImputtedSteps,na.rm=TRUE), dailyStepMedian = median(ImputtedSteps, na.rm=TRUE), DataType = "Imputted")
+
+#Rbind them to then use the ggplot function
+PlotData <- rbind(DailyTotals, DailyImputtedTotals)
+ggplot(PlotData, aes(dailyStepTotal, fill = DataType), ylab="Days (61 Days in Each Dataset)", xlab="Total Daily Steps") + geom_histogram(alpha = 0.8, binwidth=(5000/7), position="Dodge")
+
+```
+
+I'm surprised to see that the histograms are so close.  Essentially, by adding imputted data for the NAs, we added observations with non-negative values, thus the sums can only increase.  It appears the lowest bin in the original data contained days where there were many NAs, and by adding the imputted values, these days moved directly to the middle of the histgram.  I would have thought that the variation would be spread across many bins and not all concentrated into the two bins, but after seeing this, the effect is defensible.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r, Question4, echo=TRUE}
+
+#1. Create a new factor variable in the dataset with two levels - 'weekday' and 'weekend' indicating whether a given date is a weekday or weekend.
+
+WeekActivityData <- mutate(ImputtingData, WeekPart = wday(date))
+
+WeekActivityData$WeekPart[WeekActivityData$WeekPart == 1 | WeekActivityData$WeekPart == 7] <- "WeekEnd"
+
+WeekActivityData$WeekPart[WeekActivityData$WeekPart != "WeekEnd"] <- "WeekDay"
+
+head(WeekActivityData,10)
+
+#2. Make a panel plot containing a time series plot of the 5-minute intervals and average number of steps taken.
+
+WeekIntervalTrends <- WeekActivityData %>%
+    group_by(interval, WeekPart) %>%
+    summarize(intervalStepTotal = sum(ImputtedSteps,na.rm=TRUE),intervalStepMean = mean(ImputtedSteps,na.rm=TRUE), intervalStepMedian = median(ImputtedSteps, na.rm=TRUE))
+
+ggplot(WeekIntervalTrends, aes(x = interval, y = intervalStepMean, fill = WeekPart)) + geom_line() + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + facet_wrap(~WeekPart, nrow=2)
+
+```
+
+Generally, during the week ends, it appears that the individual takes less steps in the early morning, perhaps sleeping in.  Even when the steps start to increase, they are not increasing to the same level as, remaining mostly under the week day averages until close to noon.  During roughly the early afternoon hours, week end steps seem to be higher than week day steps, and remain higher or about even until early evening.  Week end nights seem to contain more steps, winding down gradually compared to the sharper decrease during the week days.
